@@ -1,0 +1,335 @@
+[
+  {
+    "source_file": "test/logs/6gpus_2g.log",
+    "timing_data": {
+      "init_time": {
+        "microseconds": 1957674,
+        "milliseconds": 1957.674
+      },
+      "first_comm_time": {
+        "microseconds": 4915337,
+        "milliseconds": 4915.337
+      },
+      "add_time": {
+        "microseconds": 100927,
+        "milliseconds": 100.927
+      },
+      "post_expansion_time": {
+        "microseconds": 10814,
+        "milliseconds": 10.814
+      }
+    },
+    "test_info": {
+      "initial_ranks": 5,
+      "total_ranks": 6,
+      "nccl_version": "2.23.4+cuda11.7",
+      "cuda_version": "12020"
+    },
+    "allreduce_results": [
+      {
+        "rank": 0,
+        "result": 15.0
+      },
+      {
+        "rank": 1,
+        "result": 15.0
+      },
+      {
+        "rank": 2,
+        "result": 15.0
+      },
+      {
+        "rank": 3,
+        "result": 15.0
+      },
+      {
+        "rank": 4,
+        "result": 15.0
+      },
+      {
+        "rank": 0,
+        "result": 21.0
+      },
+      {
+        "rank": 1,
+        "result": 21.0
+      },
+      {
+        "rank": 2,
+        "result": 21.0
+      },
+      {
+        "rank": 3,
+        "result": 21.0
+      },
+      {
+        "rank": 4,
+        "result": 21.0
+      },
+      {
+        "rank": 5,
+        "result": 21.0
+      }
+    ]
+  },
+  {
+    "source_file": "test/logs/5gpus_2g.log",
+    "timing_data": {
+      "init_time": {
+        "microseconds": 1390710,
+        "milliseconds": 1390.71
+      },
+      "first_comm_time": {
+        "microseconds": 1378291,
+        "milliseconds": 1378.291
+      },
+      "add_time": {
+        "microseconds": 140551,
+        "milliseconds": 140.551
+      },
+      "post_expansion_time": {
+        "microseconds": 10312,
+        "milliseconds": 10.312
+      }
+    },
+    "test_info": {
+      "initial_ranks": 4,
+      "total_ranks": 5,
+      "nccl_version": "2.23.4+cuda11.7",
+      "cuda_version": "12020"
+    },
+    "allreduce_results": [
+      {
+        "rank": 0,
+        "result": 10.0
+      },
+      {
+        "rank": 1,
+        "result": 10.0
+      },
+      {
+        "rank": 2,
+        "result": 10.0
+      },
+      {
+        "rank": 3,
+        "result": 10.0
+      },
+      {
+        "rank": 0,
+        "result": 15.0
+      },
+      {
+        "rank": 1,
+        "result": 15.0
+      },
+      {
+        "rank": 2,
+        "result": 15.0
+      },
+      {
+        "rank": 3,
+        "result": 15.0
+      },
+      {
+        "rank": 4,
+        "result": 15.0
+      }
+    ]
+  },
+  {
+    "source_file": "test/logs/4gpus_2g.log",
+    "timing_data": {
+      "init_time": {
+        "microseconds": 972140,
+        "milliseconds": 972.14
+      },
+      "first_comm_time": {
+        "microseconds": 766584,
+        "milliseconds": 766.584
+      },
+      "add_time": {
+        "microseconds": 136992,
+        "milliseconds": 136.992
+      },
+      "post_expansion_time": {
+        "microseconds": 5855,
+        "milliseconds": 5.855
+      }
+    },
+    "test_info": {
+      "initial_ranks": 3,
+      "total_ranks": 4,
+      "nccl_version": "2.23.4+cuda11.7",
+      "cuda_version": "12020"
+    },
+    "allreduce_results": [
+      {
+        "rank": 0,
+        "result": 6.0
+      },
+      {
+        "rank": 1,
+        "result": 6.0
+      },
+      {
+        "rank": 2,
+        "result": 6.0
+      },
+      {
+        "rank": 0,
+        "result": 10.0
+      },
+      {
+        "rank": 1,
+        "result": 10.0
+      },
+      {
+        "rank": 2,
+        "result": 10.0
+      },
+      {
+        "rank": 3,
+        "result": 10.0
+      }
+    ]
+  },
+  {
+    "source_file": "test/logs/3gpus_2g.log",
+    "timing_data": {
+      "init_time": {
+        "microseconds": 687971,
+        "milliseconds": 687.971
+      },
+      "first_comm_time": {
+        "microseconds": 598180,
+        "milliseconds": 598.18
+      },
+      "add_time": {
+        "microseconds": 99600,
+        "milliseconds": 99.6
+      },
+      "post_expansion_time": {
+        "microseconds": 7624,
+        "milliseconds": 7.624
+      }
+    },
+    "test_info": {
+      "initial_ranks": 2,
+      "total_ranks": 3,
+      "nccl_version": "2.23.4+cuda11.7",
+      "cuda_version": "12020"
+    },
+    "allreduce_results": [
+      {
+        "rank": 0,
+        "result": 3.0
+      },
+      {
+        "rank": 1,
+        "result": 3.0
+      },
+      {
+        "rank": 0,
+        "result": 6.0
+      },
+      {
+        "rank": 1,
+        "result": 6.0
+      },
+      {
+        "rank": 2,
+        "result": 6.0
+      }
+    ]
+  },
+  {
+    "source_file": "test/logs/8gpus_2g.log",
+    "timing_data": {
+      "init_time": {
+        "microseconds": 2798680,
+        "milliseconds": 2798.68
+      },
+      "first_comm_time": {
+        "microseconds": 2217099,
+        "milliseconds": 2217.099
+      },
+      "add_time": {
+        "microseconds": 126921,
+        "milliseconds": 126.921
+      },
+      "post_expansion_time": {
+        "microseconds": 8803,
+        "milliseconds": 8.803
+      }
+    },
+    "test_info": {
+      "initial_ranks": 7,
+      "total_ranks": 8,
+      "nccl_version": "2.23.4+cuda11.7",
+      "cuda_version": "12020"
+    },
+    "allreduce_results": [
+      {
+        "rank": 0,
+        "result": 28.0
+      },
+      {
+        "rank": 1,
+        "result": 28.0
+      },
+      {
+        "rank": 2,
+        "result": 28.0
+      },
+      {
+        "rank": 3,
+        "result": 28.0
+      },
+      {
+        "rank": 4,
+        "result": 28.0
+      },
+      {
+        "rank": 5,
+        "result": 28.0
+      },
+      {
+        "rank": 6,
+        "result": 28.0
+      },
+      {
+        "rank": 0,
+        "result": 36.0
+      },
+      {
+        "rank": 1,
+        "result": 36.0
+      },
+      {
+        "rank": 2,
+        "result": 36.0
+      },
+      {
+        "rank": 3,
+        "result": 36.0
+      },
+      {
+        "rank": 4,
+        "result": 36.0
+      },
+      {
+        "rank": 5,
+        "result": 36.0
+      },
+      {
+        "rank": 6,
+        "result": 36.0
+      },
+      {
+        "rank": 7,
+        "result": 36.0
+      }
+    ]
+  }
+]

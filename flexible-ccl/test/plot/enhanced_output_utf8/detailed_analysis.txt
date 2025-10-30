@@ -1,0 +1,64 @@
+NCCL Dynamic Scaling Enhanced Performance Analysis
+============================================================
+
+📊 Test Configuration:
+  - GPU Range: 3 - 8
+  - NCCL Version: 2.23.4+cuda11.7
+  - CUDA Version: 12020
+
+⏱️ Performance Metrics by GPU Count:
+
+3 GPUs:
+  - NCCL Init: 688.0 ms
+  - First Comm: 598.2 ms
+  - Dynamic Add: 99.6 ms
+  - Post Expansion: 7.6 ms
+  - Total Time: 1393.4 ms
+  - Add Time Ratio: 7.1%
+
+4 GPUs:
+  - NCCL Init: 972.1 ms
+  - First Comm: 766.6 ms
+  - Dynamic Add: 137.0 ms
+  - Post Expansion: 5.9 ms
+  - Total Time: 1881.6 ms
+  - Add Time Ratio: 7.3%
+
+5 GPUs:
+  - NCCL Init: 1390.7 ms
+  - First Comm: 1378.3 ms
+  - Dynamic Add: 140.6 ms
+  - Post Expansion: 10.3 ms
+  - Total Time: 2919.9 ms
+  - Add Time Ratio: 4.8%
+
+6 GPUs:
+  - NCCL Init: 1957.7 ms
+  - First Comm: 4915.3 ms
+  - Dynamic Add: 100.9 ms
+  - Post Expansion: 10.8 ms
+  - Total Time: 6984.8 ms
+  - Add Time Ratio: 1.4%
+
+8 GPUs:
+  - NCCL Init: 2798.7 ms
+  - First Comm: 2217.1 ms
+  - Dynamic Add: 126.9 ms
+  - Post Expansion: 8.8 ms
+  - Total Time: 5151.5 ms
+  - Add Time Ratio: 2.5%
+
+🔍 Statistical Analysis:
+  - Average Dynamic Add Time: 121.0 ms
+  - Dynamic Add Time Std Dev: 17.5 ms
+  - Min Dynamic Add Time: 99.6 ms
+  - Max Dynamic Add Time: 140.6 ms
+  - Average Communication Improvement: 209.9x
+  - Best Communication Improvement: 454.5x
+
+📈 Scaling Analysis:
+  - 3 GPUs: 1.00x base add time
+  - 4 GPUs: 1.38x base add time
+  - 5 GPUs: 1.41x base add time
+  - 6 GPUs: 1.01x base add time
+  - 8 GPUs: 1.27x base add time
