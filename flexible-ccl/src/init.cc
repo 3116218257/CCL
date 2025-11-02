@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <pthread.h>
 #include "param.h"
 
 #define STR2(v) #v
@@ -255,6 +256,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->gproxyConn);
 
   NCCLCHECK(ncclRegCleanup(comm));
+  
+  // Cleanup simple decoupling mutex
+  pthread_mutex_destroy(&comm->commStateLock);
 
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
 
@@ -425,6 +429,20 @@ ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, int ndev,
   comm->intraComm0 = comm;
   comm->intraRank = 0;
   comm->intraRanks = 1;
+  
+  // Initialize simple decoupling fields
+  comm->activeCommOps = 0;
+  comm->rankAddInProgress = false;
+  pthread_mutex_init(&comm->commStateLock, NULL);
+
+  // Initialize staging area
+  comm->staging.hasPendingRank = false;
+  comm->staging.pendingNRanks = 0;
+  comm->staging.pendingPeerInfo = NULL;
+  comm->staging.pendingChannels = NULL;
+  memset(comm->staging.pendingGraphs, 0, sizeof(comm->staging.pendingGraphs));
+  comm->staging.pendingBootstrapState = NULL;
+  comm->staging.activationReady = false;
 
   return ncclSuccess;
 }

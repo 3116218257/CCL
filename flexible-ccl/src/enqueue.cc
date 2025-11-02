@@ -17,6 +17,7 @@
 
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
+#include <unistd.h> // usleep
 
 NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
 
@@ -2336,6 +2337,15 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   int devOld = -1;
 
   NCCLCHECKGOTO(CommCheck(info->comm, info->opName, "comm"), ret, fail);
+  
+  // Simple decoupling: wait if rank addition is in progress
+  while (info->comm->rankAddInProgress) {
+    usleep(1000); // 1ms wait
+  }
+  
+  // Increment active communication operations counter
+  __sync_fetch_and_add(&info->comm->activeCommOps, 1);
+  
   // Check whether communicator is ready to communicate
   NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, fail);
 
@@ -2353,6 +2363,10 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   NCCLCHECKGOTO(taskAppend(info->comm, info), ret, fail);
 
 exit:
+  // Decrement active communication operations counter
+  if (info->comm) {
+    __sync_fetch_and_sub(&info->comm->activeCommOps, 1);
+  }
   if (devOld != -1) CUDACHECK(cudaSetDevice(devOld));
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());

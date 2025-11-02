@@ -603,6 +603,22 @@ struct ncclComm {
   // Parallel scaling support: topology generation counter
   uint64_t generation;
   
+  // Simple decoupling mechanism for concurrent communication and rank addition
+  volatile int activeCommOps;        // Counter for active communication operations
+  pthread_mutex_t commStateLock;     // Lightweight lock for state transitions
+  volatile bool rankAddInProgress;   // Flag indicating rank addition is in progress
+  
+  // Staging area for new rank data - prevents immediate activation
+  struct {
+    bool hasPendingRank;             // Whether there's a pending rank to activate
+    int pendingNRanks;               // Staged new nRanks value
+    struct ncclPeerInfo* pendingPeerInfo;  // Staged peerInfo array
+    struct ncclChannel* pendingChannels;   // Staged channels array
+    struct ncclTopoGraph pendingGraphs[NCCL_NUM_ALGORITHMS]; // Staged topology graphs
+    void* pendingBootstrapState;     // Staged bootstrap state
+    volatile bool activationReady;   // Flag indicating staging is complete and ready for activation
+  } staging;
+  
   uint64_t endMagic;
 };
 

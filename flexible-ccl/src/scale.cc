@@ -10,6 +10,7 @@
 #include <cassert>
 #include <scale.h>
 #include <cstdlib>
+#include <unistd.h>
 #include "tuner.h"
 #include "transport.h"
 #include "coll_net.h"
@@ -139,47 +140,62 @@ static ncclResult_t ncclCommAddNewRankFunc(struct ncclAsyncJob *job_) {
   ncclComm_t newRankComm = newRankInfo->comm;
   struct bootstrapState *state = (struct bootstrapState *)comm->bootstrap;
   struct bootstrapState *newRankState = (struct bootstrapState *)newRankComm->bootstrap;
+  struct bootstrapState *pendingState;
 
   CUDACHECKGOTO(cudaSetDevice(cudaDev), result, fail);
 
-  // update nRanks & bootstrap state
-  int nRanks;
-  nRanks = ++comm->nRanks;
-  state->nranks = nRanks;
-  NCCLCHECKGOTO(ncclRealloc(&state->peerP2pAddresses, nRanks - 1, nRanks), result, fail);
-  NCCLCHECKGOTO(ncclRealloc(&state->peerProxyAddresses, nRanks - 1, nRanks), result, fail);
-  NCCLCHECKGOTO(ncclRealloc(&state->peerProxyAddressesUDS, nRanks - 1, nRanks), result, fail);
-  state->peerP2pAddresses[nRanks - 1] = newRankState->peerP2pAddresses[nRanks - 1];
-  state->peerProxyAddresses[nRanks - 1] = newRankState->peerProxyAddresses[nRanks - 1];
-  state->peerProxyAddressesUDS[nRanks - 1] = newRankState->peerProxyAddressesUDS[nRanks - 1];
-
-  // update peerInfo
-  NCCLCHECKGOTO(ncclRealloc(&comm->peerInfo, nRanks, nRanks + 1), result, fail);
-  comm->peerInfo[nRanks] = comm->peerInfo[nRanks - 1];
-  comm->peerInfo[nRanks - 1] = newRankComm->peerInfo[nRanks - 1];
-
-  // update channels
-  comm->connectSend[nRanks - 1] = comm->connectRecv[nRanks - 1] = 0;
-  for (int c = 0; c < comm->nChannels; c++) {
-    struct ncclChannel *channel = comm->channels + c;
-    int &prev = channel->ring.prev;
-    int &next = channel->ring.next;
-    if (prev == nRanks - 2) {
-      prev = nRanks - 1;
-      NCCLCHECKGOTO(ncclTransportP2pForcedConnect(comm, c, 1, &prev, 0, nullptr, 0), result, fail);
-    } else if (next == 0) {
-      next = nRanks - 1;
-      NCCLCHECKGOTO(ncclTransportP2pForcedConnect(comm, c, 0, nullptr, 1, &next, 0), result, fail);
-    }
+  // Stage new rank data instead of directly modifying comm structures
+  pthread_mutex_lock(&comm->commStateLock);
+  
+  if (comm->staging.hasPendingRank) {
+    pthread_mutex_unlock(&comm->commStateLock);
+    WARN("Another rank addition is already in progress");
+    result = ncclInvalidUsage;
+    goto fail;
   }
 
-  // update graphs
+  // Set staging flag
+  comm->staging.hasPendingRank = true;
+  comm->staging.pendingNRanks = comm->nRanks + 1;
+  
+  // Stage bootstrap state
+  NCCLCHECKGOTO(ncclCalloc(&comm->staging.pendingBootstrapState, 1), result, fail_unlock);
+  pendingState = (struct bootstrapState *)comm->staging.pendingBootstrapState;
+  pendingState->nranks = comm->staging.pendingNRanks;
+  
+  // Copy existing bootstrap addresses and add new rank
+  NCCLCHECKGOTO(ncclCalloc(&pendingState->peerP2pAddresses, comm->staging.pendingNRanks * sizeof(union ncclSocketAddress)), result, fail_unlock);
+  NCCLCHECKGOTO(ncclCalloc(&pendingState->peerProxyAddresses, comm->staging.pendingNRanks * sizeof(union ncclSocketAddress)), result, fail_unlock);
+  NCCLCHECKGOTO(ncclCalloc(&pendingState->peerProxyAddressesUDS, comm->staging.pendingNRanks * sizeof(uint64_t)), result, fail_unlock);
+  
+  memcpy(pendingState->peerP2pAddresses, state->peerP2pAddresses, comm->nRanks * sizeof(*state->peerP2pAddresses));
+  memcpy(pendingState->peerProxyAddresses, state->peerProxyAddresses, comm->nRanks * sizeof(*state->peerProxyAddresses));
+  memcpy(pendingState->peerProxyAddressesUDS, state->peerProxyAddressesUDS, comm->nRanks * sizeof(*state->peerProxyAddressesUDS));
+  
+  pendingState->peerP2pAddresses[comm->nRanks] = newRankState->peerP2pAddresses[comm->nRanks];
+  pendingState->peerProxyAddresses[comm->nRanks] = newRankState->peerProxyAddresses[comm->nRanks];
+  pendingState->peerProxyAddressesUDS[comm->nRanks] = newRankState->peerProxyAddressesUDS[comm->nRanks];
+
+  // Stage peerInfo
+  NCCLCHECKGOTO(ncclCalloc(&comm->staging.pendingPeerInfo, comm->staging.pendingNRanks + 1), result, fail_unlock);
+  memcpy(comm->staging.pendingPeerInfo, comm->peerInfo, (comm->nRanks + 1) * sizeof(*comm->peerInfo));
+  comm->staging.pendingPeerInfo[comm->staging.pendingNRanks] = comm->staging.pendingPeerInfo[comm->nRanks];
+  comm->staging.pendingPeerInfo[comm->nRanks] = newRankComm->peerInfo[comm->nRanks];
+
+  // Stage graphs
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
-    comm->graphs[i] = newRankComm->graphs[i];
+    comm->staging.pendingGraphs[i] = newRankComm->graphs[i];
   }
+
+  // Mark staging as ready for activation
+  comm->staging.activationReady = true;
+  
+  pthread_mutex_unlock(&comm->commStateLock);
 
 exit:
   return result;
+fail_unlock:
+  pthread_mutex_unlock(&comm->commStateLock);
 fail:
   goto exit;
 }
@@ -217,21 +233,131 @@ static ncclResult_t ncclCommSetupNewRankFunc(struct ncclAsyncJob *job_) {
   int cudaDev = comm->cudaDev;
   int rank = comm->rank;
   int nRanks = comm->nRanks;
+  bool isNewRank;
 
   CUDACHECKGOTO(cudaSetDevice(cudaDev), res, fail);
+  
+  // Simple decoupling: set rank addition in progress flag
+  comm->rankAddInProgress = true;
+  
+  // Wait for active communication operations to complete
+  while (comm->activeCommOps > 0) {
+    usleep(1000); // 1ms wait
+  }
 
+  // Check if this is a new rank (doesn't have staged data) or existing rank (has staged data)
+  pthread_mutex_lock(&comm->commStateLock);
+  
+  isNewRank = !(comm->staging.hasPendingRank && comm->staging.activationReady);
+  
+  if (!isNewRank) {
+    // This is an existing rank with staged data - activate it
+    printf("DEBUG: Activating staged data for existing rank\n");
+    
+    // Declare variables before any potential goto
+    struct bootstrapState *state;
+    struct bootstrapState *pendingState;
+    int oldNRanks;
+    
+    // Atomically activate staged data
+    printf("DEBUG: Getting bootstrap states\n");
+    state = (struct bootstrapState *)comm->bootstrap;
+    pendingState = (struct bootstrapState *)comm->staging.pendingBootstrapState;
+    printf("DEBUG: Bootstrap states obtained\n");
+    
+    // Update nRanks and bootstrap state
+    oldNRanks = comm->nRanks;
+    comm->nRanks = comm->staging.pendingNRanks;
+    nRanks = comm->nRanks;
+    
+    // Replace bootstrap addresses
+    free(state->peerP2pAddresses);
+    free(state->peerProxyAddresses);
+    free(state->peerProxyAddressesUDS);
+    state->nranks = pendingState->nranks;
+    state->peerP2pAddresses = pendingState->peerP2pAddresses;
+    state->peerProxyAddresses = pendingState->peerProxyAddresses;
+    state->peerProxyAddressesUDS = pendingState->peerProxyAddressesUDS;
+    
+    // Nullify transferred pointers to prevent double-free
+    pendingState->peerP2pAddresses = NULL;
+    pendingState->peerProxyAddresses = NULL;
+    pendingState->peerProxyAddressesUDS = NULL;
+    
+    // Replace peerInfo
+    free(comm->peerInfo);
+    comm->peerInfo = comm->staging.pendingPeerInfo;
+    
+    // Replace graphs
+    for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
+      comm->graphs[i] = comm->staging.pendingGraphs[i];
+    }
+    
+    // Update channels for new rank
+    printf("DEBUG: Updating channels for new rank\n");
+    NCCLCHECKGOTO(ncclRealloc(&comm->connectSend, oldNRanks, nRanks), res, fail_unlock);
+    NCCLCHECKGOTO(ncclRealloc(&comm->connectRecv, oldNRanks, nRanks), res, fail_unlock);
+    comm->connectSend[nRanks - 1] = comm->connectRecv[nRanks - 1] = 0;
+    printf("DEBUG: Starting channel loop\n");
+    
+    for (int c = 0; c < comm->nChannels; c++) {
+      printf("DEBUG: Processing channel %d\n", c);
+      struct ncclChannel *channel = comm->channels + c;
+      printf("DEBUG: Got channel pointer\n");
+      int &prev = channel->ring.prev;
+      int &next = channel->ring.next;
+      printf("DEBUG: Got prev=%d, next=%d\n", prev, next);
+      if (prev == nRanks - 2) {
+        printf("DEBUG: Updating prev connection\n");
+        prev = nRanks - 1;
+        NCCLCHECKGOTO(ncclTransportP2pForcedConnect(comm, c, 1, &prev, 0, nullptr, 0), res, fail_unlock);
+      } else if (next == 0) {
+        printf("DEBUG: Updating next connection\n");
+        next = nRanks - 1;
+        NCCLCHECKGOTO(ncclTransportP2pForcedConnect(comm, c, 0, nullptr, 1, &next, 0), res, fail_unlock);
+      }
+      printf("DEBUG: Channel %d processed\n", c);
+    }
+    
+    // Clear staging area
+    // Note: Don't free pendingBootstrapState as its pointers have been transferred to state
+    // Just free the structure itself, not the pointers it contained
+    free(comm->staging.pendingBootstrapState);
+    comm->staging.hasPendingRank = false;
+    comm->staging.pendingNRanks = 0;
+    // Note: pendingPeerInfo ownership has been transferred to comm->peerInfo
+    comm->staging.pendingPeerInfo = NULL;
+    comm->staging.pendingChannels = NULL;
+    memset(comm->staging.pendingGraphs, 0, sizeof(comm->staging.pendingGraphs));
+    comm->staging.pendingBootstrapState = NULL;
+    comm->staging.activationReady = false;
+  }
+  
+  pthread_mutex_unlock(&comm->commStateLock);
+
+  printf("DEBUG: About to setup transport, rank=%d, nRanks=%d\n", rank, nRanks);
   if (rank == nRanks - 1) {
     // New rank (last rank) needs full setup
+    printf("DEBUG: New rank - calling ncclTransportP2pSetup\n");
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_RING], 0), res, fail);
+    printf("DEBUG: New rank - calling devCommSetup\n");
     NCCLCHECKGOTO(devCommSetup(comm), res, fail);
+    printf("DEBUG: New rank setup completed\n");
   } else {
     // Existing ranks need resetup to accommodate new rank
+    printf("DEBUG: Existing rank - calling ncclTransportP2pSetup\n");
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_RING], 0), res, fail);
+    printf("DEBUG: Existing rank - calling devCommResetup\n");
     NCCLCHECKGOTO(devCommResetup(comm), res, fail);
+    printf("DEBUG: Existing rank resetup completed\n");
   }
 
 exit:
+  // Clear rank addition in progress flag
+  comm->rankAddInProgress = false;
   return res;
+fail_unlock:
+  pthread_mutex_unlock(&comm->commStateLock);
 fail:
   goto exit;
 }

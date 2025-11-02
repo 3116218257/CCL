@@ -802,6 +802,11 @@ static ncclResult_t socketConnect(void* commState, int peer, int tag, struct ncc
   ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
 
+  printf("DEBUG: socketConnect - commState=%p, peer=%d, tag=%d\n", commState, peer, tag);
+  printf("DEBUG: socketConnect - state=%p, state->rank=%d\n", state, state->rank);
+  printf("DEBUG: socketConnect - state->peerP2pAddresses=%p\n", state->peerP2pAddresses);
+  printf("DEBUG: socketConnect - accessing state->peerP2pAddresses + %d\n", peer);
+  
   struct socketAckInfo ack = (struct socketAckInfo){.rank = state->rank, .tag = tag};
   NCCLCHECKGOTO(ncclSocketInit(sock, state->peerP2pAddresses + peer, state->magic, ncclSocketTypeBootstrap), ret, fail);
   NCCLCHECKGOTO(ncclSocketConnect(sock), ret, fail);

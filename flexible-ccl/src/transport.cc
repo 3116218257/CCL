@@ -20,18 +20,36 @@ struct ncclTransport* ncclTransports[NTRANSPORTS] = {
 
 template <int type>
 static ncclResult_t selectTransport(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclConnect* connect, int channelId, int peer, int connIndex, int* transportType) {
+  printf("DEBUG: selectTransport called - type=%d, channelId=%d, peer=%d, comm->nRanks=%d\n", type, channelId, peer, comm->nRanks);
+  if (peer >= comm->nRanks) {
+    printf("ERROR: peer %d >= comm->nRanks %d\n", peer, comm->nRanks);
+    return ncclInternalError;
+  }
   struct ncclPeerInfo* myInfo = comm->peerInfo+comm->rank;
   struct ncclPeerInfo* peerInfo = comm->peerInfo+peer;
+  printf("DEBUG: Got peerInfo pointers - myInfo=%p, peerInfo=%p\n", myInfo, peerInfo);
+  printf("DEBUG: About to access comm->channels[%d].peers[%d]\n", channelId, peer);
+  if (comm->channels[channelId].peers[peer] == NULL) {
+    printf("ERROR: comm->channels[%d].peers[%d] is NULL\n", channelId, peer);
+    return ncclInternalError;
+  }
+  printf("DEBUG: Channel peer pointer is valid: %p\n", comm->channels[channelId].peers[peer]);
   struct ncclConnector* connector = (type == 1) ? comm->channels[channelId].peers[peer]->send + connIndex :
                                                   comm->channels[channelId].peers[peer]->recv + connIndex;
+  printf("DEBUG: Got connector pointer: %p\n", connector);
   for (int t=0; t<NTRANSPORTS; t++) {
+    printf("DEBUG: Trying transport %d\n", t);
     struct ncclTransport *transport = ncclTransports[t];
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
+    printf("DEBUG: Calling canConnect for transport %d\n", t);
     NCCLCHECK(transport->canConnect(&ret, comm, graph, myInfo, peerInfo));
+    printf("DEBUG: canConnect returned %d for transport %d\n", ret, t);
     if (ret) {
+      printf("DEBUG: Setting up transport %d\n", t);
       connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(comm, graph, myInfo, peerInfo, connect, connector, channelId, connIndex));
+      printf("DEBUG: Transport %d setup completed\n", t);
       if (transportType) *transportType = t;
       return ncclSuccess;
     }
@@ -178,19 +196,37 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     TIME_STOP(1);
 
     TIME_START(2);
+    printf("DEBUG: Starting bootstrap communication - sendPeer=%d, recvPeer=%d, sendChannels=%d, recvChannels=%d\n", sendPeer, recvPeer, sendChannels, recvChannels);
     if (sendPeer == recvPeer) {
       if (recvChannels+sendChannels) {
+        printf("DEBUG: Same peer bootstrap - calling bootstrapSend\n");
         NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, data[p], sizeof(struct ncclConnect)*(recvChannels+sendChannels)), ret, fail);
+        printf("DEBUG: Same peer bootstrap - calling bootstrapRecv\n");
         NCCLCHECKGOTO(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, data[p], sizeof(struct ncclConnect)*(recvChannels+sendChannels)), ret, fail);
         sendData[p] = data[p];
         recvData[p] = data[p]+sendChannels;
+        printf("DEBUG: Same peer bootstrap completed\n");
       }
     } else {
-      if (recvChannels) NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, recvData[p], sizeof(struct ncclConnect)*recvChannels), ret, fail);
-      if (sendChannels) NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, sendPeer, bootstrapTag, sendData[p], sizeof(struct ncclConnect)*sendChannels), ret, fail);
-      if (sendChannels) NCCLCHECKGOTO(bootstrapRecv(comm->bootstrap, sendPeer, bootstrapTag, sendData[p], sizeof(struct ncclConnect)*sendChannels), ret, fail);
-      if (recvChannels) NCCLCHECKGOTO(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, recvData[p], sizeof(struct ncclConnect)*recvChannels), ret, fail);
+      if (recvChannels) {
+        printf("DEBUG: Different peers - calling bootstrapSend for recv\n");
+        NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, recvPeer, bootstrapTag, recvData[p], sizeof(struct ncclConnect)*recvChannels), ret, fail);
+      }
+      if (sendChannels) {
+        printf("DEBUG: Different peers - calling bootstrapSend for send\n");
+        NCCLCHECKGOTO(bootstrapSend(comm->bootstrap, sendPeer, bootstrapTag, sendData[p], sizeof(struct ncclConnect)*sendChannels), ret, fail);
+      }
+      if (sendChannels) {
+        printf("DEBUG: Different peers - calling bootstrapRecv for send\n");
+        NCCLCHECKGOTO(bootstrapRecv(comm->bootstrap, sendPeer, bootstrapTag, sendData[p], sizeof(struct ncclConnect)*sendChannels), ret, fail);
+      }
+      if (recvChannels) {
+        printf("DEBUG: Different peers - calling bootstrapRecv for recv\n");
+        NCCLCHECKGOTO(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, recvData[p], sizeof(struct ncclConnect)*recvChannels), ret, fail);
+      }
+      printf("DEBUG: Different peers bootstrap completed\n");
     }
+    printf("DEBUG: Bootstrap communication completed\n");
     TIME_STOP(2);
 
     if (i-done == maxPeers || i == comm->nRanks-1) {
@@ -211,6 +247,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
           for (int c=0; c<MAXCHANNELS; c++) {
             TIME_START(3);
             if (sendMask & (1UL<<c)) {
+              printf("DEBUG: About to access send connector - channel=%d, sendPeer=%d, connIndex=%d\n", c, sendPeer, connIndex);
+              printf("DEBUG: comm->channels[%d].peers[%d] = %p\n", c, sendPeer, comm->channels[c].peers[sendPeer]);
               struct ncclConnector* conn = comm->channels[c].peers[sendPeer]->send + connIndex;
               // This connector hasn't completed connection yet
               if (conn->connected == 0) {
@@ -231,6 +269,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
             // Start with recv channels
             TIME_START(4);
             if (recvMask & (1UL<<c)) {
+              printf("DEBUG: About to access recv connector - channel=%d, recvPeer=%d, connIndex=%d\n", c, recvPeer, connIndex);
+              printf("DEBUG: comm->channels[%d].peers[%d] = %p\n", c, recvPeer, comm->channels[c].peers[recvPeer]);
               struct ncclConnector* conn = comm->channels[c].peers[recvPeer]->recv + connIndex;
               // This connector hasn't completed connection yet
               if (conn->connected == 0) {
